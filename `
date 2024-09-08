@@ -1,0 +1,118 @@
+#include "kernel/types.h"
+#include "kernel/stat.h"
+#include "user/user.h"
+#include "kernel/fs.h"
+
+void
+print_match(char *ptrn, char *str)
+{
+  char *p, *s;
+
+  printf("matching %s with %s\n", ptrn, str);
+  if (strlen(ptrn) > strlen(str))
+    return;
+
+  if (strlen(ptrn) == 0 || strlen(str) == 0)
+    return;
+
+  printf("%s\n", "starting the matching loop");
+  p = ptrn;
+  s = str;
+  while (s) {
+    if (*p == *s) {
+      printf("%s\n", "matched first char");
+      p++;
+      s++;
+      continue;
+    }
+
+    if (!p) {
+      printf("%s\n", "matched!");
+      printf("%s", str);
+      return;
+    }
+
+    printf("%s\n", "no match, reset p, advance s");
+    p = ptrn;
+    s++;
+  }  
+}
+
+void
+find(char *path, char *file)
+{
+  char buf[512], *p;
+  int fd;
+  struct dirent de;
+  struct stat st;
+
+  printf("path = %s, file = %s\n", path, file);
+
+  if((fd = open(path, 0)) < 0){
+    fprintf(2, "find: cannot open %s\n", path);
+    exit(1);
+  }
+
+  if(fstat(fd, &st) < 0){
+    fprintf(2, "find: cannot stat %s\n", path);
+    close(fd);
+    exit(1);
+  }
+
+  if(st.type != T_DIR){
+    fprintf(2, "find: %s is not a directory\n", path);
+    close(fd);
+    exit(1);
+  }
+
+  strcpy(buf, path);
+  p = buf + strlen(buf);
+  *p++ = '/';
+  
+  while(read(fd, &de, sizeof(de)) == sizeof(de)){
+    if(de.inum == 0 || de.inum == 1)
+      continue;
+    
+    memmove(p, de.name, strlen(de.name));
+    p += strlen(de.name);
+    *p = 0;
+
+    if(stat(buf, &st) < 0){
+      fprintf(2, "find: cannot stat %s\n", buf);
+      continue;
+    }
+
+    switch(st.type){
+    case T_FILE:
+      print_match(file, de.name);
+      break;
+
+    case T_DIR:
+      printf("finding %s in %s\n", file, de.name);
+      find(buf, file);
+      break;
+    }
+  }
+  
+  close(fd);
+}
+
+int
+main(int argc, char *argv[])
+{
+  if(argc < 1){
+    printf("usage: find [path] file [file]...");
+    exit(1);
+  }
+
+  if(argc == 1){
+    find(".", argv[1]);
+    exit(0);
+  }
+  
+  for(int i = 2; i < argc; i++)
+    find(argv[1], argv[i]);
+  
+  exit(0);
+}
+
